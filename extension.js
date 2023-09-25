@@ -27,6 +27,45 @@ game.import('extension', (lib, game, ui, get, ai, _status) => {
 			console.time(extensionName);
 
 			window.duicfg = config;
+			window.dui_virtual_card = {
+				empty_equip1:{
+					type:"equip",
+					subtype:"equip1",
+				},
+				empty_equip2:{
+					type:"equip",
+					subtype:"equip2",
+				},
+				empty_equip3:{
+					type:"equip",
+					subtype:"equip3",
+				},
+				empty_equip4:{
+					type:"equip",
+					subtype:"equip4",
+				},
+				empty_equip5:{
+					type:"equip",
+					subtype:"equip5",
+				},
+			};
+			window.dui_translate = {
+				empty_equip1:" ",
+				empty_equip1_info:" ",
+				empty_equip2:" ",
+				empty_equip2_info:" ",
+				empty_equip3:" ",
+				empty_equip3_info:" ",
+				empty_equip4:" ",
+				empty_equip4_info:" ",
+				empty_equip5:" ",
+				empty_equip5_info:" ",
+				empty_equip1_bg:" ",
+				empty_equip2_bg:" ",
+				empty_equip3_bg:" ",
+				empty_equip4_bg:" ",
+				empty_equip5_bg:" ",
+			};
 			window.dui = window.decadeUI = {
 				init: function () {
 					this.extensionName = extensionName;
@@ -66,6 +105,12 @@ game.import('extension', (lib, game, ui, get, ai, _status) => {
 
 					document.addEventListener('click', function (e) { dui.set.activeElement(e.target); }, true);
 					this.initOverride();
+					for(var m in window.dui_virtual_card){
+						lib.card[m] = window.dui_virtual_card[m];
+					}
+					for(var m in window.dui_translate){
+						lib.translate[m] = window.dui_translate[m];
+					}
 					return this;
 				},
 				initOverride: function () {
@@ -160,7 +205,8 @@ game.import('extension', (lib, game, ui, get, ai, _status) => {
 									$dieAfter: lib.element.player.$dieAfter,
 									$skill: lib.element.player.$skill,
 									setSeatNum: lib.element.player.setSeatNum,
-									$syncExpand: lib.element.player.$syncExpand
+									$syncExpand: lib.element.player.$syncExpand,
+									removeEquipTrigger:lib.element.player.removeEquipTrigger
 								},
 								event: {
 									send: lib.element.event.send,
@@ -332,7 +378,7 @@ game.import('extension', (lib, game, ui, get, ai, _status) => {
 
 								result.node.name.innerText = text;
 							}
-
+							this.$syncEmpty();
 							return result;
 						};
 						Player.uninit = function () {
@@ -422,6 +468,166 @@ game.import('extension', (lib, game, ui, get, ai, _status) => {
 							};
 
 							return this;
+						};
+						Player.$syncDisable=function(map){
+							var player=this;
+							var suits={equip3:'+1马栏',equip4:'-1马栏',equip6:'特殊栏'};
+							if(!map){
+								map=(player.disabledSlots||{});
+							}
+							game.addVideo('$syncDisable',player,get.copy(map))
+							game.broadcast(function(player,map){
+								player.disabledSlots=map;
+								player.$syncDisable(map);
+							},player,map)
+							var map2=get.copy(map);
+							var cards=Array.from(player.node.equips.childNodes);
+							for(var card of cards){
+								if(card.name.indexOf('feichu_')==0){
+									var index=card.name.slice(7);
+									if(!map2[index]) map2[index]=0;
+									map2[index]--;
+								}
+							}
+							for(var index in map2){
+								if(index.indexOf('equip')!=0||!(parseInt(index.slice(5))>0)) continue;
+								var num=map2[index];
+								if(num>0){
+									for(var i=0;i<num;i++){
+										var card=game.createCard('feichu_'+index,(suits[index]||(get.translation(index)+'栏')),'');
+										card.fix();
+										card.style.transform='';
+										card.classList.remove('drawinghidden');
+										card.classList.add('feichu');
+										delete card._transform;
+										var equipNum=get.equipNum(card);
+										var equipped=false;
+										for(var j=0;j<player.node.equips.childNodes.length;j++){
+											if(get.equipNum(player.node.equips.childNodes[j])>=equipNum){
+												player.node.equips.insertBefore(card,player.node.equips.childNodes[j]);
+												equipped=true;
+												if(get.equipNum(player.node.equips.childNodes[i]) == equipNum && player.node.equips.childNodes[i].name.indexOf('empty_') == 0){
+													player.node.equips.removeChild(player.node.equips.childNodes[i]);
+												}
+												break;
+											}
+										}
+										if(!equipped){
+											player.node.equips.appendChild(card);
+											if(_status.discarded){
+												_status.discarded.remove(card);
+											}
+										}
+									}
+								}
+								else if(num<0){
+									for(var i=0;i>num;i--){
+										var card=cards.find(card=>card.name=='feichu_'+index);
+										if(card){
+											player.node.equips.removeChild(card);
+											cards.remove(card);
+										}
+									}
+								}
+							}
+						};
+						Player.$equip=function(card){
+							game.broadcast(function(player,card){
+								player.$equip(card);
+							},this,card);
+							card.fix();
+							card.style.transform='';
+							card.classList.remove('drawinghidden');
+							delete card._transform;
+							var player=this;
+							var equipNum=get.equipNum(card);
+							var equipped=false;
+							for(var i=0;i<player.node.equips.childNodes.length;i++){
+								if(get.equipNum(player.node.equips.childNodes[i])>=equipNum){
+									player.node.equips.insertBefore(card,player.node.equips.childNodes[i]);
+									if(get.equipNum(player.node.equips.childNodes[i]) == equipNum && player.node.equips.childNodes[i].name.indexOf('empty_') == 0){
+										player.node.equips.removeChild(player.node.equips.childNodes[i]);
+									}
+									equipped=true;
+									break;
+								}
+							}
+							if(!equipped){
+								player.node.equips.appendChild(card);
+								if(_status.discarded){
+									_status.discarded.remove(card);
+								}
+							}
+							var info=get.info(card);
+							if(info.skills){
+								for(var i=0;i<info.skills.length;i++){
+									player.addSkillTrigger(info.skills[i]);
+								}
+							}
+							return player;
+						};
+						Player.removeEquipTrigger=function(){
+							var ret = base.lib.element.player.removeEquipTrigger.apply(this,arguments);
+							this.$syncEmpty();
+							return ret;
+						};
+						Player.$syncEmpty=function(){
+							var player=this;
+							game.addVideo('$syncEmpty',player);
+							game.broadcast(function(player){
+								player.$syncEmpty();
+							},player);
+							var cards=Array.from(player.node.equips.childNodes);
+							var map2 = {
+								'equip1':player.countEmptySlot('equip1'),
+								'equip2':player.countEmptySlot('equip2'),
+								'equip3':player.countEmptySlot('equip3'),
+								'equip4':player.countEmptySlot('equip4'),
+								'equip5':player.countEmptySlot('equip5'),
+							};
+							for(var card of cards){
+								if(card.name.indexOf('empty_')==0){
+									var index=card.name.slice(6);
+									if(!map2[index]) map2[index]=0;
+									map2[index]--;
+								}
+							}
+							for(var index in map2){
+								if(index.indexOf('equip')!=0||!(parseInt(index.slice(5))>0)) continue;
+								var num=map2[index];
+								if(num>0){
+									for(var i=0;i<num;i++){
+										var card=game.createCard('empty_'+index," ",'');
+										card.fix();
+										card.style.transform='';
+										card.style.visibility="hidden";
+										card.classList.add('feichu');
+										card.classList.remove('drawinghidden');
+										delete card._transform;
+										var equipNum=get.equipNum(card);
+										var equipped=false;
+										for(var j=0;j<player.node.equips.childNodes.length;j++){
+											if(get.equipNum(player.node.equips.childNodes[j])>=equipNum){
+												player.node.equips.insertBefore(card,player.node.equips.childNodes[j]);
+												equipped=true;
+												break;
+											}
+										}
+										if(!equipped){
+											player.node.equips.appendChild(card);
+										}
+									}
+								}
+								else if(num<0){
+									for(var i=0;i>num;i--){
+										var card=cards.find(card=>card.name=='empty_'+index);
+										if(card){
+											player.node.equips.removeChild(card);
+											cards.remove(card);
+										}
+									}
+								}
+							}
 						};
 						Player.update = function (count, hp, hpMax, hujia) {
 							if (!_status.video) {
@@ -2075,6 +2281,7 @@ game.import('extension', (lib, game, ui, get, ai, _status) => {
 								}
 							}, subtype);
 							player.$equip(card);
+							player.$syncEmpty();
 							game.addVideo('equip', player, get.cardInfo(card));
 							if (event.log != false) game.log(player, '装备了', card);
 							if (event.updatePile) game.updateRoundNumber();
